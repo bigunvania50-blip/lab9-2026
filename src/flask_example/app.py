@@ -1,37 +1,58 @@
-from flask import Flask, render_template, request, redirect, url_for
+import os
+
+from flask import Flask, redirect, render_template, request, url_for
+from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
 
-tasks = []
-task_id_counter = 0
+# База даних SQLite: файл contacts.db лежить поруч з app.py
+basedir = os.path.abspath(os.path.dirname(__file__))
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(basedir, "contacts.db")
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-@app.route('/')
+db = SQLAlchemy(app)
+
+
+# Модель: одна таблиця "contact" з полями id, name, phone, email
+class Contact(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    phone = db.Column(db.String(30), nullable=False)
+    email = db.Column(db.String(100), nullable=False)
+
+
+# Головна сторінка: таблиця контактів і форма додавання
+@app.route("/")
 def index():
-    return render_template('index.html', tasks=tasks)
+    contacts = Contact.query.all()
+    return render_template("index.html", contacts=contacts)
 
-@app.route('/add', methods=['POST'])
+
+# Додавання нового контакту (дані приходять з форми)
+@app.route("/add", methods=["POST"])
 def add():
-    global task_id_counter
-    task_content = request.form['content']
-    if task_content:
-        task_id_counter += 1
-        new_task = {'id': task_id_counter, 'content': task_content, 'done': False}
-        tasks.append(new_task)
-    return redirect(url_for('index'))
+    name = request.form["name"].strip()
+    phone = request.form["phone"].strip()
+    email = request.form["email"].strip()
+    if name and phone and email:
+        db.session.add(Contact(name=name, phone=phone, email=email))
+        db.session.commit()
+    return redirect(url_for("index"))
 
-@app.route('/done/<int:id>')
-def done(id):
-    for task in tasks:
-        if task['id'] == id:
-            task['done'] = True
-            break
-    return redirect(url_for('index'))
 
-@app.route('/delete/<int:id>')
-def delete(id):
-    global tasks
-    tasks = [task for task in tasks if task['id'] != id]
-    return redirect(url_for('index'))
+# Видалення контакту за його id
+@app.route("/delete/<int:contact_id>", methods=["POST"])
+def delete(contact_id):
+    contact = db.session.get(Contact, contact_id)
+    if contact:
+        db.session.delete(contact)
+        db.session.commit()
+    return redirect(url_for("index"))
 
-if __name__ == '__main__':
+
+# Створюємо таблицю в contacts.db, якщо її ще немає
+with app.app_context():
+    db.create_all()
+
+if __name__ == "__main__":
     app.run(debug=True)
